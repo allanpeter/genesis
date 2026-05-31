@@ -58,6 +58,18 @@ export class RoadmapsService {
     });
   }
 
+  /** Persiste um draft de roadmap já gerado (sem chamar IA novamente). */
+  async createFromDraft(
+    orgId: string,
+    title: string,
+    workspaceId: string | undefined,
+    draft: RoadmapDraft,
+  ): Promise<Roadmap> {
+    const roadmap = await this.create(orgId, title, workspaceId);
+    await this.persistDraft(orgId, roadmap.id, workspaceId, draft);
+    return roadmap;
+  }
+
   /** Gera roadmap + hierarquia de work items a partir do PRD (última versão), via agente. */
   async generateFromPrd(orgId: string, input: GenerateRoadmapInput): Promise<Roadmap> {
     const prd = await this.prisma.prd.findFirst({

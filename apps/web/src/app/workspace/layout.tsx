@@ -8,6 +8,7 @@ import {
   Megaphone,
   Plug,
   ScrollText,
+  Users,
   Workflow,
 } from 'lucide-react';
 
@@ -17,6 +18,7 @@ const NAV = [
   { href: '/workspace/prd', label: 'PRD', icon: ScrollText },
   { href: '/workspace/roadmap', label: 'Roadmap', icon: Map },
   { href: '/workspace/company', label: 'Empresa', icon: Building2 },
+  { href: '/workspace/members', label: 'Membros', icon: Users },
   { href: '/workspace/automation', label: 'Automações', icon: Workflow },
   { href: '/workspace/integrations', label: 'Integrações', icon: Plug },
   { href: '/workspace/marketing', label: 'Marketing', icon: Megaphone },

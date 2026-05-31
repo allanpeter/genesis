@@ -11,6 +11,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { HealthModule } from './health/health.module';
 import { IdeasModule } from './ideas/ideas.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { MembersModule } from './members/members.module';
 import { PrdsModule } from './prds/prds.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RoadmapsModule } from './roadmaps/roadmaps.module';
@@ -27,6 +28,7 @@ import { RoadmapsModule } from './roadmaps/roadmaps.module';
     CompanyModule,
     ConversationsModule,
     KnowledgeModule,
+    MembersModule,
     PrdsModule,
     RoadmapsModule,
   ],

@@ -58,6 +58,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [artifact, setArtifact] = useState<Record<string, unknown> | null>(null);
+  const [savedArtifact, setSavedArtifact] = useState<{ id: string; type: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -96,7 +97,7 @@ export default function ChatPage() {
   }
 
   async function start() {
-    setBusy(true); setError(null); setArtifact(null); setConv(null);
+    setBusy(true); setError(null); setArtifact(null); setSavedArtifact(null); setConv(null);
     try {
       const c = await api.request<ConvDetail>('/conversations/start', {
         method: 'POST',
@@ -130,11 +131,12 @@ export default function ChatPage() {
     setBusy(true); setError(null);
     const art = AGENT_ARTIFACT[agentSlug] ?? 'prd';
     try {
-      const res = await api.request<{ artifact: string; result: unknown }>(`/conversations/${conv.id}/generate`, {
-        method: 'POST',
-        body: JSON.stringify({ artifact: art }),
-      });
+      const res = await api.request<{ artifact: string; result: unknown; savedId?: string; savedType?: string }>(
+        `/conversations/${conv.id}/generate`,
+        { method: 'POST', body: JSON.stringify({ artifact: art }) },
+      );
       setArtifact(res.result as Record<string, unknown>);
+      if (res.savedId && res.savedType) setSavedArtifact({ id: res.savedId, type: res.savedType });
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -277,16 +279,193 @@ export default function ChatPage() {
               <div className="w-[380px] shrink-0 overflow-y-auto rounded-lg border bg-card p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <h2 className="font-semibold text-sm">{artLabel.replace('Gerar ', '')}</h2>
-                  <Button variant="ghost" size="sm" onClick={() => setArtifact(null)}>✕</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setArtifact(null); setSavedArtifact(null); }}>✕</Button>
                 </div>
-                <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
-                  {JSON.stringify(artifact, null, 2)}
-                </pre>
+                {savedArtifact && (
+                  <div className="mb-3 flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                    <span>Salvo com sucesso.</span>
+                    {savedArtifact.type !== 'validation' && (
+                      <button
+                        onClick={() => router.push(`/workspace/${savedArtifact.type === 'prd' ? 'prd' : 'roadmap'}`)}
+                        className="font-semibold underline underline-offset-2"
+                      >
+                        {savedArtifact.type === 'prd' ? 'Ver PRD' : 'Ver Roadmap'}
+                      </button>
+                    )}
+                    {savedArtifact.type === 'validation' && (
+                      <button
+                        onClick={() => router.push('/workspace')}
+                        className="font-semibold underline underline-offset-2"
+                      >
+                        Ver no Idea Hub
+                      </button>
+                    )}
+                  </div>
+                )}
+                <ArtifactViewer type={AGENT_ARTIFACT[agentSlug] ?? 'prd'} data={artifact} />
               </div>
             )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Artifact renderers ────────────────────────────────────────────────────────
+
+function ArtifactViewer({ type, data }: { type: ArtifactType; data: Record<string, unknown> }) {
+  if (type === 'prd') return <PrdViewer data={data} />;
+  if (type === 'roadmap') return <RoadmapViewer data={data} />;
+  if (type === 'validation') return <ValidationViewer data={data} />;
+  if (type === 'marketing') return <MarketingViewer data={data} />;
+  return null;
+}
+
+function ASection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-4">
+      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="text-xs text-foreground">{children}</div>
+    </div>
+  );
+}
+
+function AList({ items }: { items: unknown }) {
+  const arr = Array.isArray(items) ? (items as string[]) : [];
+  if (!arr.length) return <p className="text-muted-foreground">—</p>;
+  return (
+    <ul className="list-disc space-y-1 pl-4">
+      {arr.map((it, i) => <li key={i}>{String(it)}</li>)}
+    </ul>
+  );
+}
+
+function PrdViewer({ data }: { data: Record<string, unknown> }) {
+  const personas = Array.isArray(data.personas)
+    ? (data.personas as { name: string; description?: string; goals?: string[] }[])
+    : [];
+  const mvp = data.mvp as { scope?: string[]; outOfScope?: string[] } | undefined;
+  return (
+    <div>
+      <ASection title="Visão">
+        <p>{String(data.vision ?? '—')}</p>
+      </ASection>
+      {personas.length > 0 && (
+        <ASection title="Personas">
+          {personas.map((p, i) => (
+            <div key={i} className="mb-2 rounded border p-2">
+              <p className="font-medium">{p.name}</p>
+              {p.description && <p className="text-muted-foreground">{p.description}</p>}
+              {p.goals?.length ? <AList items={p.goals} /> : null}
+            </div>
+          ))}
+        </ASection>
+      )}
+      <ASection title="Requisitos funcionais"><AList items={data.functionalRequirements} /></ASection>
+      <ASection title="Requisitos não-funcionais"><AList items={data.nonFunctionalRequirements} /></ASection>
+      {mvp && (
+        <>
+          <ASection title="MVP — escopo"><AList items={mvp.scope} /></ASection>
+          <ASection title="Fora do MVP"><AList items={mvp.outOfScope} /></ASection>
+        </>
+      )}
+      <ASection title="Roadmap outline"><AList items={data.roadmapOutline} /></ASection>
+    </div>
+  );
+}
+
+type RoadmapTask = string;
+type RoadmapStory = { title: string; description?: string; tasks?: RoadmapTask[] };
+type RoadmapFeature = { title: string; description?: string; stories?: RoadmapStory[] };
+type RoadmapEpic = { title: string; description?: string; features?: RoadmapFeature[] };
+
+function RoadmapViewer({ data }: { data: Record<string, unknown> }) {
+  const epics = Array.isArray(data.epics) ? (data.epics as RoadmapEpic[]) : [];
+  if (!epics.length) return <p className="text-xs text-muted-foreground">Sem épicos.</p>;
+  return (
+    <div className="space-y-3">
+      {epics.map((epic, ei) => (
+        <div key={ei} className="rounded-md border p-2">
+          <p className="text-xs font-semibold">{epic.title}</p>
+          {epic.description && <p className="mb-1 text-[11px] text-muted-foreground">{epic.description}</p>}
+          {epic.features?.map((feat, fi) => (
+            <div key={fi} className="ml-3 mt-1.5 border-l pl-2">
+              <p className="text-[11px] font-medium">{feat.title}</p>
+              {feat.stories?.map((story, si) => (
+                <div key={si} className="ml-3 mt-1 border-l pl-2">
+                  <p className="text-[11px] text-muted-foreground">{story.title}</p>
+                  {story.tasks?.map((task, ti) => (
+                    <p key={ti} className="ml-3 text-[10px] text-muted-foreground/70">• {task}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ValidationViewer({ data }: { data: Record<string, unknown> }) {
+  const swot = data.swot as Record<string, string[]> | undefined;
+  const tam = data.tamSamSom as { tam?: string; sam?: string; som?: string; rationale?: string } | undefined;
+  return (
+    <div>
+      <ASection title="Score de viabilidade">
+        <p className="text-2xl font-bold text-primary">{String(data.viabilityScore ?? '—')}<span className="text-xs text-muted-foreground">/100</span></p>
+      </ASection>
+      {swot && (
+        <ASection title="SWOT">
+          <div className="grid grid-cols-2 gap-1.5">
+            {(['strengths','weaknesses','opportunities','threats'] as const).map((k) => (
+              <div key={k} className="rounded border p-1.5">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide">{k}</p>
+                <AList items={swot[k]} />
+              </div>
+            ))}
+          </div>
+        </ASection>
+      )}
+      {tam && (
+        <ASection title="TAM / SAM / SOM">
+          <p><span className="font-medium">TAM:</span> {tam.tam}</p>
+          <p><span className="font-medium">SAM:</span> {tam.sam}</p>
+          <p><span className="font-medium">SOM:</span> {tam.som}</p>
+          {tam.rationale && <p className="mt-1 text-muted-foreground">{tam.rationale}</p>}
+        </ASection>
+      )}
+      <ASection title="Fontes de receita"><AList items={data.revenueSources} /></ASection>
+      <ASection title="Principais riscos"><AList items={data.mainRisks} /></ASection>
+      {data.recommendation != null && (
+        <ASection title="Recomendação"><p>{String(data.recommendation)}</p></ASection>
+      )}
+    </div>
+  );
+}
+
+function MarketingViewer({ data }: { data: Record<string, unknown> }) {
+  type Channel = { channel: string; rationale?: string; priority?: string };
+  const channels = Array.isArray(data.channels) ? (data.channels as Channel[]) : [];
+  return (
+    <div>
+      {data.positioning != null && <ASection title="Posicionamento"><p>{String(data.positioning)}</p></ASection>}
+      {data.mainMessage != null && <ASection title="Mensagem principal"><p>{String(data.mainMessage)}</p></ASection>}
+      <ASection title="Segmentos-alvo"><AList items={data.targetSegments} /></ASection>
+      {channels.length > 0 && (
+        <ASection title="Canais">
+          {channels.map((c, i) => (
+            <div key={i} className="mb-1.5 rounded border p-1.5">
+              <p className="font-medium">{c.channel} {c.priority ? <span className="text-[10px] text-muted-foreground">({c.priority})</span> : null}</p>
+              {c.rationale && <p className="text-[11px] text-muted-foreground">{c.rationale}</p>}
+            </div>
+          ))}
+        </ASection>
+      )}
+      <ASection title="Mensagens-chave"><AList items={data.keyMessages} /></ASection>
+      <ASection title="Pilares de conteúdo"><AList items={data.contentPillars} /></ASection>
+      <ASection title="Go-to-market"><AList items={data.go_to_market_steps} /></ASection>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { loadAgent, listAgentSlugs, mergeWithDbAgent } from '@genesis/ai';
 import { extractJson } from '@genesis/ai';
+import { prdContentSchema, roadmapDraftSchema } from '@genesis/shared';
 import type { StartConversationInput, ReplyInput } from '@genesis/shared';
 import type { Conversation, Message } from '@genesis/db';
 import { PrismaService } from '../prisma/prisma.service';
@@ -63,7 +64,10 @@ export class ConversationsService {
    */
   async start(orgId: string, input: StartConversationInput): Promise<ConversationWithMessages> {
     const agentDef = await this.resolveAgent(orgId, input.agentSlug);
-    const businessContext = await this.context.build(orgId);
+    const contextQuery = input.ideaId
+      ? `${agentDef.name} para ideia vinculada`
+      : agentDef.name;
+    const businessContext = await this.context.build(orgId, contextQuery);
 
     let ideaContext = '';
     if (input.ideaId) {
@@ -122,6 +126,7 @@ export class ConversationsService {
       data: {
         organizationId: orgId,
         agentId: null,
+        ideaId: input.ideaId ?? null,
         title,
         messages: {
           create: [
@@ -150,7 +155,7 @@ export class ConversationsService {
    */
   async reply(orgId: string, convId: string, input: ReplyInput): Promise<Message> {
     const conv = await this.getById(orgId, convId);
-    const { systemPrompt } = await this.rebuildSystemPrompt(orgId, conv);
+    const { systemPrompt } = await this.rebuildSystemPrompt(orgId, conv, input.content);
 
     // Persiste a mensagem do usuário
     await this.prisma.message.create({
@@ -183,7 +188,7 @@ export class ConversationsService {
     void (async () => {
       try {
         const conv = await this.getById(orgId, convId);
-        const { systemPrompt } = await this.rebuildSystemPrompt(orgId, conv);
+        const { systemPrompt } = await this.rebuildSystemPrompt(orgId, conv, content);
 
         await this.prisma.message.create({
           data: { conversationId: convId, role: 'USER', content },
@@ -222,13 +227,13 @@ export class ConversationsService {
 
   /**
    * Gera um artefato a partir da conversa (PRD, roadmap, validation, marketing).
-   * Usa todo o histórico da conversa como contexto.
+   * Para PRD e Roadmap, persiste o resultado no banco e retorna savedId + savedType.
    */
   async generateArtifact(
     orgId: string,
     convId: string,
     artifact: 'prd' | 'roadmap' | 'validation' | 'marketing',
-  ): Promise<{ artifact: string; result: unknown }> {
+  ): Promise<{ artifact: string; result: unknown; savedId?: string; savedType?: string }> {
     const conv = await this.getById(orgId, convId);
     const { systemPrompt, agentSlug } = await this.rebuildSystemPrompt(orgId, conv);
 
@@ -273,6 +278,61 @@ export class ConversationsService {
     });
 
     const parsed = extractJson(res.content);
+
+    if (artifact === 'prd') {
+      try {
+        const content = prdContentSchema.parse(parsed);
+        const title = `PRD: ${(content.vision ?? '').slice(0, 80) || 'Gerado via chat'}`;
+        const saved = await this.prds.create(orgId, {
+          title,
+          content,
+          ideaId: (conv as typeof conv & { ideaId?: string | null }).ideaId ?? undefined,
+        });
+        return { artifact, result: parsed, savedId: saved.id, savedType: 'prd' };
+      } catch {
+        // Se a validação falhar, retorna o resultado sem persistir
+      }
+    }
+
+    if (artifact === 'roadmap') {
+      try {
+        const draft = roadmapDraftSchema.parse(parsed);
+        const convTitle = conv.title?.replace(/^\[[^\]]+\]\s*/, '') ?? 'Roadmap gerado via chat';
+        const saved = await this.roadmaps.createFromDraft(orgId, convTitle, undefined, draft);
+        return { artifact, result: parsed, savedId: saved.id, savedType: 'roadmap' };
+      } catch {
+        // Se a validação falhar, retorna o resultado sem persistir
+      }
+    }
+
+    if (artifact === 'validation') {
+      const ideaId = (conv as typeof conv & { ideaId?: string | null }).ideaId;
+      if (ideaId) {
+        try {
+          const p = parsed as Record<string, unknown>;
+          const score = typeof p.viabilityScore === 'number' ? p.viabilityScore : null;
+          const saved = await this.prisma.validation.create({
+            data: {
+              ideaId,
+              ...(p.swot != null && { swot: p.swot as object }),
+              ...(p.tamSamSom != null && { tamSamSom: p.tamSamSom as object }),
+              ...(Array.isArray(p.revenueSources) && { revenueSources: p.revenueSources as object }),
+              ...((p.mainRisks != null || p.recommendation != null) && {
+                marketAnalysis: { mainRisks: p.mainRisks, recommendation: p.recommendation } as object,
+              }),
+              viabilityScore: score,
+            },
+          });
+          if (score !== null) {
+            await this.prisma.idea.update({ where: { id: ideaId }, data: { viabilityScore: score } });
+          }
+          return { artifact, result: parsed, savedId: saved.id, savedType: 'validation' };
+        } catch {
+          // retorna resultado sem persistir se falhar
+        }
+      }
+    }
+
     return { artifact, result: parsed };
   }
 
@@ -287,14 +347,14 @@ export class ConversationsService {
     return dbAgent ? mergeWithDbAgent(fileDef, dbAgent) : fileDef;
   }
 
-  private async rebuildSystemPrompt(orgId: string, conv: ConversationWithMessages) {
+  private async rebuildSystemPrompt(orgId: string, conv: ConversationWithMessages, query?: string) {
     // O slug fica prefixado no título: "[product-manager] ..."
     const slugMatch = conv.title?.match(/^\[([^\]]+)\]/);
     const agentSlug = slugMatch?.[1] ?? 'product-manager';
 
     const [agentDef, businessContext] = await Promise.all([
       this.resolveAgent(orgId, agentSlug),
-      this.context.build(orgId),
+      this.context.build(orgId, query ?? agentSlug),
     ]);
 
     const systemPrompt =

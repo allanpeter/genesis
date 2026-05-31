@@ -126,6 +126,7 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   memberships  Membership[]
+  inviteTokens InviteToken[]
   workspaces   Workspace[]
   ideas        Idea[]
   prds         Prd[]
@@ -227,6 +228,22 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model InviteToken {
+  id             String     @id @default(cuid())
+  organizationId String
+  email          String
+  role           MemberRole @default(MEMBER)
+  token          String     @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("invite_tokens")
+}
+
 // ── Workspace (container de projeto) ─────────────────────────────────────────
 
 model Workspace {
@@ -267,6 +284,7 @@ model Idea {
   complexity       Complexity?
   ecosystemSynergy Int? // 0..100
   estimatedMvpDays Int?
+  viabilityScore   Int? // 0..100 — preenchido pelo Validation Engine
   status           IdeaStatus @default(CAPTURED)
   source           String? // brain_dump | audio | import | manual
   aiInsights       Json? // riscos, oportunidades, concorrentes, modelos de negócio
@@ -275,8 +293,9 @@ model Idea {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  validations  Validation[]
-  prds         Prd[]
+  validations   Validation[]
+  prds          Prd[]
+  conversations Conversation[]
 
   @@index([organizationId, status])
   @@map("ideas")
@@ -440,12 +459,14 @@ model Conversation {
   id             String   @id @default(cuid())
   organizationId String
   agentId        String?
+  ideaId         String?
   title          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  idea         Idea?        @relation(fields: [ideaId], references: [id], onDelete: SetNull)
   messages     Message[]
 
   @@index([organizationId])

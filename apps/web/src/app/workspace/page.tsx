@@ -19,6 +19,7 @@ interface Idea {
   revenuePotential: number | null;
   ecosystemSynergy: number | null;
   estimatedMvpDays: number | null;
+  viabilityScore: number | null;
 }
 
 const COMPLEXITY_INV: Record<Complexity, number> = { LOW: 100, MEDIUM: 66, HIGH: 33, VERY_HIGH: 0 };
@@ -46,6 +47,7 @@ export default function IdeaHubPage() {
   const router = useRouter();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [form, setForm] = useState({ ...EMPTY });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [sort, setSort] = useState<'priority' | 'recent'>('priority');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -70,29 +72,51 @@ export default function IdeaHubPage() {
     return list;
   }, [ideas, sort]);
 
-  async function create() {
+  function startEdit(idea: Idea) {
+    setEditingId(idea.id);
+    setForm({
+      title: idea.title,
+      description: idea.description ?? '',
+      category: idea.category ?? '',
+      tags: idea.tags.join(', '),
+      complexity: idea.complexity ?? 'MEDIUM',
+      revenuePotential: idea.revenuePotential ?? 50,
+      ecosystemSynergy: idea.ecosystemSynergy ?? 50,
+      estimatedMvpDays: idea.estimatedMvpDays ?? 30,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm({ ...EMPTY });
+    setError(null);
+  }
+
+  async function save() {
     if (form.title.trim().length < 3) {
       setError('Título precisa de pelo menos 3 caracteres.');
       return;
     }
     setSaving(true);
     setError(null);
+    const payload = {
+      title: form.title,
+      description: form.description || undefined,
+      category: form.category || undefined,
+      tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      complexity: form.complexity,
+      revenuePotential: Number(form.revenuePotential),
+      ecosystemSynergy: Number(form.ecosystemSynergy),
+      estimatedMvpDays: Number(form.estimatedMvpDays),
+    };
     try {
-      await api.request('/ideas', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: form.title,
-          description: form.description || undefined,
-          category: form.category || undefined,
-          tags: form.tags
-            ? form.tags.split(',').map((t) => t.trim()).filter(Boolean)
-            : [],
-          complexity: form.complexity,
-          revenuePotential: Number(form.revenuePotential),
-          ecosystemSynergy: Number(form.ecosystemSynergy),
-          estimatedMvpDays: Number(form.estimatedMvpDays),
-        }),
-      });
+      if (editingId) {
+        await api.request(`/ideas/${editingId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+        setEditingId(null);
+      } else {
+        await api.request('/ideas', { method: 'POST', body: JSON.stringify(payload) });
+      }
       setForm({ ...EMPTY });
       await load();
     } catch (e) {
@@ -103,6 +127,7 @@ export default function IdeaHubPage() {
   }
 
   async function remove(id: string) {
+    if (editingId === id) cancelEdit();
     await api
       .request(`/ideas/${id}`, { method: 'DELETE' })
       .catch((e) => setError((e as Error).message));
@@ -132,7 +157,7 @@ export default function IdeaHubPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Nova ideia</CardTitle>
+          <CardTitle className="text-base">{editingId ? 'Editar ideia' : 'Nova ideia'}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
           <Input
@@ -181,10 +206,15 @@ export default function IdeaHubPage() {
             value={form.estimatedMvpDays}
             onChange={(v) => setForm((f) => ({ ...f, estimatedMvpDays: v }))}
           />
-          <div className="md:col-span-2">
-            <Button onClick={create} disabled={saving}>
-              {saving ? 'Salvando…' : 'Adicionar ideia'}
+          <div className="flex items-center gap-2 md:col-span-2">
+            <Button onClick={save} disabled={saving}>
+              {saving ? 'Salvando…' : editingId ? 'Salvar alterações' : 'Adicionar ideia'}
             </Button>
+            {editingId && (
+              <Button variant="outline" onClick={cancelEdit} disabled={saving}>
+                Cancelar
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -194,12 +224,22 @@ export default function IdeaHubPage() {
           <Card key={idea.id}>
             <CardHeader className="flex-row items-start justify-between space-y-0">
               <CardTitle className="text-base">{idea.title}</CardTitle>
-              <span
-                className="shrink-0 rounded bg-primary/10 px-2 py-1 text-xs font-semibold text-primary"
-                title="Score de prioridade"
-              >
-                {priorityScore(idea)}
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span
+                  className="rounded bg-primary/10 px-2 py-1 text-xs font-semibold text-primary"
+                  title="Score de prioridade"
+                >
+                  {priorityScore(idea)}
+                </span>
+                {idea.viabilityScore != null && (
+                  <span
+                    className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    title="Score de viabilidade (Validation Engine)"
+                  >
+                    viab. {idea.viabilityScore}
+                  </span>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-2 text-xs text-muted-foreground">
               {idea.description && <p className="line-clamp-2">{idea.description}</p>}
@@ -214,9 +254,19 @@ export default function IdeaHubPage() {
                 <span>
                   {idea.category ?? 'sem categoria'} · {idea.complexity ?? '—'}
                 </span>
-                <Button variant="ghost" size="sm" onClick={() => remove(idea.id)}>
-                  remover
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => startEdit(idea)}
+                    className={editingId === idea.id ? 'text-primary' : ''}
+                  >
+                    editar
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => remove(idea.id)}>
+                    remover
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

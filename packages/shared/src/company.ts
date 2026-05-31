@@ -9,7 +9,7 @@ export const companyProfileSchema = z.object({
   tone: z.string().max(500).optional(),
   managerName: z.string().max(120).optional(),
   managerRole: z.string().max(120).optional(),
-  extra: z.record(z.string(), z.unknown()).optional(),
+  extra: z.record(z.string(), z.unknown()).nullish(),
 });
 export type CompanyProfileInput = z.infer<typeof companyProfileSchema>;
 

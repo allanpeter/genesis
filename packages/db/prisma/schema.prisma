@@ -1,0 +1,535 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Genesis — Prisma schema
+// Multi-tenant (shared schema). Toda entidade de negócio carrega organizationId.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum IdeaStatus {
+  CAPTURED
+  TRIAGED
+  VALIDATING
+  VALIDATED
+  APPROVED
+  ARCHIVED
+  REJECTED
+}
+
+enum Complexity {
+  LOW
+  MEDIUM
+  HIGH
+  VERY_HIGH
+}
+
+enum PrdStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  ARCHIVED
+}
+
+enum WorkItemType {
+  EPIC
+  FEATURE
+  STORY
+  TASK
+}
+
+enum WorkItemStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AssigneeType {
+  USER
+  AGENT
+}
+
+enum LlmProvider {
+  ANTHROPIC
+  OPENAI
+  GEMINI
+  OPENROUTER
+  OLLAMA
+}
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum AutomationStatus {
+  ACTIVE
+  PAUSED
+  DRAFT
+}
+
+enum IntegrationProvider {
+  GITHUB
+  GITLAB
+  JIRA
+  LINEAR
+  SLACK
+  DISCORD
+  TELEGRAM
+  GMAIL
+  GOOGLE_CALENDAR
+  N8N
+}
+
+// ── Tenancy / Auth / RBAC ────────────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("free")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  Membership[]
+  workspaces   Workspace[]
+  ideas        Idea[]
+  prds         Prd[]
+  roadmaps     Roadmap[]
+  workItems    WorkItem[]
+  agents       Agent[]
+  agentRuns    AgentRun[]
+  conversations Conversation[]
+  knowledgeDocs KnowledgeDocument[]
+  automations  Automation[]
+  integrations Integration[]
+  metrics      Metric[]
+  auditLogs    AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model Membership {
+  id             String     @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MemberRole @default(MEMBER)
+  createdAt      DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  resourceType   String
+  resourceId     String?
+  metadata       Json?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_logs")
+}
+
+// ── Workspace (container de projeto) ─────────────────────────────────────────
+
+model Workspace {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  slug           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ideas         Idea[]
+  prds          Prd[]
+  roadmaps      Roadmap[]
+  workItems     WorkItem[]
+  agents        Agent[]
+  knowledgeDocs KnowledgeDocument[]
+  automations   Automation[]
+  integrations  Integration[]
+  metrics       Metric[]
+
+  @@unique([organizationId, slug])
+  @@map("workspaces")
+}
+
+// ── Fluxo de produto: Idea → Validation → PRD → Roadmap → WorkItem ───────────
+
+model Idea {
+  id               String     @id @default(cuid())
+  organizationId   String
+  workspaceId      String?
+  title            String
+  description      String?
+  category         String?
+  tags             String[]   @default([])
+  revenuePotential Int? // 0..100
+  complexity       Complexity?
+  ecosystemSynergy Int? // 0..100
+  estimatedMvpDays Int?
+  status           IdeaStatus @default(CAPTURED)
+  source           String? // brain_dump | audio | import | manual
+  aiInsights       Json? // riscos, oportunidades, concorrentes, modelos de negócio
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  validations  Validation[]
+  prds         Prd[]
+
+  @@index([organizationId, status])
+  @@map("ideas")
+}
+
+model Validation {
+  id             String   @id @default(cuid())
+  ideaId         String
+  marketAnalysis Json?
+  competition    Json?
+  swot           Json?
+  tamSamSom      Json?
+  revenueSources Json?
+  techDifficulty Json?
+  viabilityScore Int? // 0..100
+  createdAt      DateTime @default(now())
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId])
+  @@map("validations")
+}
+
+model Prd {
+  id             String    @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  ideaId         String?
+  title          String
+  status         PrdStatus @default(DRAFT)
+  currentVersion Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  idea         Idea?        @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  versions     PrdVersion[]
+  roadmaps     Roadmap[]
+
+  @@index([organizationId])
+  @@map("prds")
+}
+
+model PrdVersion {
+  id        String   @id @default(cuid())
+  prdId     String
+  version   Int
+  // conteúdo estruturado: visão, personas, req. funcionais/não-funcionais, MVP, roadmap
+  content   Json
+  changeLog String?
+  authoredBy String? // userId ou agentId
+  createdAt DateTime @default(now())
+
+  prd Prd @relation(fields: [prdId], references: [id], onDelete: Cascade)
+
+  @@unique([prdId, version])
+  @@map("prd_versions")
+}
+
+model Roadmap {
+  id             String   @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  prdId          String?
+  title          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  prd          Prd?         @relation(fields: [prdId], references: [id], onDelete: SetNull)
+  workItems    WorkItem[]
+
+  @@index([organizationId])
+  @@map("roadmaps")
+}
+
+// Hierarquia auto-referente: EPIC → FEATURE → STORY → TASK
+model WorkItem {
+  id             String         @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  roadmapId      String?
+  parentId       String?
+  type           WorkItemType
+  title          String
+  description    String?
+  status         WorkItemStatus @default(BACKLOG)
+  priority       Priority       @default(MEDIUM)
+  position       Int            @default(0)
+  estimatePoints Int?
+  assigneeType   AssigneeType?
+  assigneeUserId String?
+  assigneeAgentId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  roadmap      Roadmap?     @relation(fields: [roadmapId], references: [id], onDelete: SetNull)
+  parent       WorkItem?    @relation("WorkItemHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     WorkItem[]   @relation("WorkItemHierarchy")
+
+  @@index([organizationId, status])
+  @@index([roadmapId])
+  @@index([parentId])
+  @@map("work_items")
+}
+
+// ── Agentes / Conhecimento (schema agora, uso pleno em fases seguintes) ──────
+
+model Agent {
+  id             String      @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  name           String
+  role           String? // Product Manager, Tech Lead, ...
+  personality    String?
+  instructions   String?
+  provider       LlmProvider @default(ANTHROPIC)
+  model          String      @default("claude-opus-4-8")
+  tools          String[]    @default([])
+  memoryConfig   Json?
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  agentRuns     AgentRun[]
+  conversations Conversation[]
+
+  @@index([organizationId])
+  @@map("agents")
+}
+
+model AgentRun {
+  id             String         @id @default(cuid())
+  organizationId String
+  agentId        String
+  status         AgentRunStatus @default(QUEUED)
+  input          Json?
+  output         Json?
+  error          String?
+  tokensInput    Int?
+  tokensOutput   Int?
+  providerUsed   LlmProvider?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("agent_runs")
+}
+
+model Conversation {
+  id             String   @id @default(cuid())
+  organizationId String
+  agentId        String?
+  title          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  messages     Message[]
+
+  @@index([organizationId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model KnowledgeDocument {
+  id             String   @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  title          String
+  type           String? // decision | incident | learning | pattern | architecture | playbook
+  sourceUri      String?
+  content        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  chunks       KnowledgeChunk[]
+
+  @@index([organizationId])
+  @@map("knowledge_documents")
+}
+
+// Metadados do chunk; o vetor em si vive no Qdrant, referenciado por vectorId.
+model KnowledgeChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  vectorId   String? // id do ponto no Qdrant
+  tokenCount Int?
+  createdAt  DateTime @default(now())
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
+
+// ── Extensibilidade (schema stub) ────────────────────────────────────────────
+
+model Automation {
+  id             String           @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  name           String
+  status         AutomationStatus @default(DRAFT)
+  trigger        Json // { event, conditions }
+  actions        Json // [ { type, params } ]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@map("automations")
+}
+
+model Integration {
+  id             String              @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  provider       IntegrationProvider
+  name           String?
+  config         Json? // não-sensível
+  credentials    Json? // cifrado em repouso (app layer)
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, provider])
+  @@map("integrations")
+}
+
+model Metric {
+  id             String   @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  key            String // mrr | churn | cac | ltv | users | ...
+  value          Float
+  capturedAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, key, capturedAt])
+  @@map("metrics")
+}

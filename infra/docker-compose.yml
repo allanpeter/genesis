@@ -1,0 +1,67 @@
+# Genesis — infra local (stack lean). Suba com: pnpm infra:up
+name: genesis
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: genesis
+      POSTGRES_PASSWORD: genesis
+      POSTGRES_DB: genesis
+    ports:
+      # 5440 no host para evitar conflito com Postgres já rodando em 5432.
+      - '5440:5432'
+    volumes:
+      - ./.volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U genesis']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./.volumes/redis:/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - '6333:6333'
+      - '6334:6334'
+    volumes:
+      - ./.volumes/qdrant:/qdrant/storage
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: genesis
+      MINIO_ROOT_PASSWORD: genesis-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - ./.volumes/minio:/data
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
+# Fases futuras (escala): descomente quando necessário.
+#  rabbitmq:
+#    image: rabbitmq:3-management-alpine
+#    ports: ['5672:5672', '15672:15672']
+#  opensearch:
+#    image: opensearchproject/opensearch:2
+#    environment: { discovery.type: single-node }

@@ -1,14 +1,17 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { login } from '@/lib/api';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const sessionExpired = params.get('reason') === 'session_expired';
+
   const [email, setEmail] = useState('admin@genesis.dev');
   const [password, setPassword] = useState('genesis123');
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,11 @@ export default function LoginPage() {
           <CardTitle>Entrar</CardTitle>
         </CardHeader>
         <CardContent>
+          {sessionExpired && (
+            <p className="mb-4 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
+              Sua sessão expirou. Faça login novamente para continuar — suas conversas foram salvas.
+            </p>
+          )}
           <form onSubmit={onSubmit} className="space-y-4">
             <Input
               type="email"
@@ -57,5 +65,13 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

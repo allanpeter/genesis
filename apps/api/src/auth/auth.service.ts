@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import type { AuthTokens, JwtPayload, LoginInput, RegisterInput } from '@genesis/shared';
@@ -56,6 +56,45 @@ export class AuthService {
       email: user.email,
       organizationId: membership.organizationId,
       role: membership.role,
+    });
+  }
+
+  /** Troca um refresh token válido por novos access + refresh tokens. */
+  async refresh(rawRefreshToken: string): Promise<AuthTokens> {
+    let payload: JwtPayload;
+    try {
+      payload = await this.jwt.verifyAsync<JwtPayload>(rawRefreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET ?? 'change-me-refresh-secret',
+      });
+    } catch {
+      throw new ForbiddenException('Refresh token inválido ou expirado. Faça login novamente.');
+    }
+
+    // Verifica se o token existe e não foi revogado
+    const stored = await this.prisma.refreshToken.findMany({
+      where: { userId: payload.sub, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    const match = await Promise.any(
+      stored.map((t) => argon2.verify(t.tokenHash, rawRefreshToken).then((ok) => (ok ? t : Promise.reject()))),
+    ).catch(() => null);
+
+    if (!match || match.expiresAt < new Date()) {
+      throw new ForbiddenException('Refresh token inválido ou expirado. Faça login novamente.');
+    }
+
+    // Revoga o token usado e emite um novo par (rotação de refresh token)
+    await this.prisma.refreshToken.update({
+      where: { id: match.id },
+      data: { revokedAt: new Date() },
+    });
+
+    return this.issueTokens({
+      sub: payload.sub,
+      email: payload.email,
+      organizationId: payload.organizationId,
+      role: payload.role,
     });
   }
 

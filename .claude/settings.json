@@ -1,0 +1,35 @@
+{
+  "attribution": {
+    "commit": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/block-env-write.sh\"",
+            "statusMessage": "Checando .env…"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/block-env-gitadd.sh\"",
+            "statusMessage": "Checando git add .env…"
+          }
+        ]
+      }
+    ]
+  }
+}

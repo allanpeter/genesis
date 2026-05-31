@@ -139,8 +139,29 @@ model Organization {
   integrations Integration[]
   metrics      Metric[]
   auditLogs    AuditLog[]
+  profile      CompanyProfile?
 
   @@map("organizations")
+}
+
+/// Perfil de negócio da organização. Contexto injetado nos prompts (ex.: gerar PRD).
+model CompanyProfile {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  sector         String? // setor/indústria
+  description    String? // o que a empresa faz
+  businessModel  String? // como gera receita
+  targetAudience String? // público-alvo
+  tone           String? // tom de voz / estilo
+  managerName    String?
+  managerRole    String?
+  extra          Json? // campos adicionais livres
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("company_profiles")
 }
 
 model User {

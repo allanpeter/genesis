@@ -35,3 +35,49 @@ export const updateWorkItemSchema = createWorkItemSchema.partial().extend({
   assigneeAgentId: z.string().cuid().optional(),
 });
 export type UpdateWorkItemInput = z.infer<typeof updateWorkItemSchema>;
+
+/** Movimento de um card no Kanban (mudança de status/posição). */
+export const moveWorkItemSchema = z.object({
+  status: workItemStatusSchema,
+  position: z.number().int().min(0).default(0),
+});
+export type MoveWorkItemInput = z.infer<typeof moveWorkItemSchema>;
+
+/** Gera um roadmap (épicos→features→stories→tasks) a partir de um PRD (via agente). */
+export const generateRoadmapSchema = z.object({
+  prdId: z.string().cuid(),
+  workspaceId: z.string().cuid().optional(),
+  title: z.string().min(3).max(200).optional(),
+});
+export type GenerateRoadmapInput = z.infer<typeof generateRoadmapSchema>;
+
+/**
+ * Estrutura aninhada que o agente retorna ao gerar um roadmap.
+ * Persistida como hierarquia EPIC → FEATURE → STORY → TASK em WorkItem.
+ */
+export const roadmapDraftSchema = z.object({
+  epics: z.array(
+    z.object({
+      title: z.string(),
+      description: z.string().optional(),
+      features: z
+        .array(
+          z.object({
+            title: z.string(),
+            description: z.string().optional(),
+            stories: z
+              .array(
+                z.object({
+                  title: z.string(),
+                  description: z.string().optional(),
+                  tasks: z.array(z.string()).default([]),
+                }),
+              )
+              .default([]),
+          }),
+        )
+        .default([]),
+    }),
+  ),
+});
+export type RoadmapDraft = z.infer<typeof roadmapDraftSchema>;

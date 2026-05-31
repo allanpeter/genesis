@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import {
-  Bot,
-  GitBranch,
+  Building2,
   Lightbulb,
   LineChart,
   Map,
+  MessageSquare,
   Megaphone,
   Plug,
   ScrollText,
@@ -13,11 +13,11 @@ import {
 
 const NAV = [
   { href: '/workspace', label: 'Idea Hub', icon: Lightbulb },
+  { href: '/workspace/chat', label: 'Agentes', icon: MessageSquare },
   { href: '/workspace/prd', label: 'PRD', icon: ScrollText },
   { href: '/workspace/roadmap', label: 'Roadmap', icon: Map },
-  { href: '/workspace/agents', label: 'Agentes', icon: Bot },
-  { href: '/workspace/knowledge', label: 'Knowledge', icon: GitBranch },
-  { href: '/workspace/automation', label: 'Automação', icon: Workflow },
+  { href: '/workspace/company', label: 'Empresa', icon: Building2 },
+  { href: '/workspace/automation', label: 'Automações', icon: Workflow },
   { href: '/workspace/integrations', label: 'Integrações', icon: Plug },
   { href: '/workspace/marketing', label: 'Marketing', icon: Megaphone },
   { href: '/workspace/metrics', label: 'Métricas', icon: LineChart },

@@ -45,7 +45,9 @@ export class AnthropicProvider implements LLMProvider {
     const res = await this.client.messages.create({
       model,
       max_tokens: req.maxTokens ?? 2048,
-      temperature: req.temperature ?? 0.7,
+      // `temperature` é deprecado em modelos recentes (ex.: Opus 4.8) e gera 400.
+      // Só enviamos quando o chamador define explicitamente.
+      ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
       system: systemParam,
       messages: turns.map((m) => ({
         role: m.role as 'user' | 'assistant',

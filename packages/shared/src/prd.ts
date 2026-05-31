@@ -29,3 +29,10 @@ export const newPrdVersionSchema = z.object({
   changeLog: z.string().max(2000).optional(),
 });
 export type NewPrdVersionInput = z.infer<typeof newPrdVersionSchema>;
+
+/** Gera um PRD automaticamente a partir de uma ideia (via agente). */
+export const generatePrdSchema = z.object({
+  ideaId: z.string().cuid(),
+  workspaceId: z.string().cuid().optional(),
+});
+export type GeneratePrdInput = z.infer<typeof generatePrdSchema>;

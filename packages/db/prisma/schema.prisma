@@ -421,14 +421,18 @@ model Agent {
   tools          String[]    @default([])
   memoryConfig   Json?
   isActive       Boolean     @default(true)
+  parentId       String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  parent        Agent?         @relation("AgentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Agent[]        @relation("AgentHierarchy")
   agentRuns     AgentRun[]
   conversations Conversation[]
 
+  @@unique([organizationId, name])
   @@index([organizationId])
   @@map("agents")
 }
@@ -459,6 +463,7 @@ model Conversation {
   id             String   @id @default(cuid())
   organizationId String
   agentId        String?
+  agentSlug      String?
   ideaId         String?
   title          String?
   createdAt      DateTime @default(now())

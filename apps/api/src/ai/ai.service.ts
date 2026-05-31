@@ -12,4 +12,8 @@ export class AiService {
   complete(req: CompletionRequest): Promise<CompletionResult> {
     return this.registry.complete(req);
   }
+
+  stream(req: CompletionRequest): AsyncIterable<string> {
+    return this.registry.stream(req);
+  }
 }

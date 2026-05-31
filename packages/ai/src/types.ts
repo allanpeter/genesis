@@ -38,6 +38,8 @@ export interface LLMProvider {
   isConfigured(): boolean;
   complete(req: CompletionRequest): Promise<CompletionResult>;
   embed(req: EmbeddingRequest): Promise<EmbeddingResult>;
+  /** Streaming de texto delta. Opcional — provedores stub podem omitir. */
+  stream?(req: CompletionRequest): AsyncIterable<string>;
 }
 
 /** Lançado quando o provedor não está configurado ou ainda não foi implementado. */

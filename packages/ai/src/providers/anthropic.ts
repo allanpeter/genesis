@@ -72,4 +72,36 @@ export class AnthropicProvider implements LLMProvider {
     // Anthropic não expõe embeddings nativos; use outro provedor (ex.: OpenAI/Ollama).
     throw new ProviderUnavailableError(this.id, 'embeddings não suportados; use outro provedor');
   }
+
+  async *stream(req: CompletionRequest): AsyncIterable<string> {
+    if (!this.client) throw new ProviderUnavailableError(this.id, 'ANTHROPIC_API_KEY ausente');
+
+    const system = req.messages.filter((m) => m.role === 'system').map((m) => m.content);
+    const turns = req.messages.filter((m) => m.role !== 'system');
+    const model = req.model ?? DEFAULT_MODEL;
+
+    const systemParam = (
+      req.cache && system.length
+        ? [{ type: 'text', text: system.join('\n\n'), cache_control: { type: 'ephemeral' } }]
+        : system.join('\n\n') || undefined
+    ) as unknown as Anthropic.MessageCreateParams['system'];
+
+    const streamRes = await this.client.messages.create({
+      model,
+      max_tokens: req.maxTokens ?? 2048,
+      ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+      system: systemParam,
+      messages: turns.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+      stream: true,
+    });
+
+    for await (const event of streamRes) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        yield event.delta.text;
+      }
+    }
+  }
 }

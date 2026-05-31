@@ -126,6 +126,7 @@ export class ConversationsService {
       data: {
         organizationId: orgId,
         agentId: null,
+        agentSlug: input.agentSlug,
         ideaId: input.ideaId ?? null,
         title,
         messages: {
@@ -138,14 +139,7 @@ export class ConversationsService {
       include: { messages: { orderBy: { createdAt: 'asc' } } },
     });
 
-    // Armazena o systemPrompt resolvido nos metadados da conversa para turnos futuros
-    // (o Agent DB record é opcional; usamos o campo agentId=null e guardamos o slug no título por ora)
-    await this.prisma.conversation.update({
-      where: { id: conv.id },
-      data: { title: `[${input.agentSlug}] ${title}` },
-    });
-
-    return { ...conv, title: `[${input.agentSlug}] ${title}` };
+    return conv;
   }
 
   /**
@@ -197,24 +191,21 @@ export class ConversationsService {
         const history = this.buildHistory(conv.messages);
         history.push({ role: 'user', content });
 
-        // Usamos a rota não-streaming do AiService e emitimos a resposta completa de uma vez.
-        // Na Fase 2 trocaremos por streaming real via Anthropic SDK.
-        const response = await this.ai.complete({
+        // Streaming real via Anthropic SDK — cada delta de texto é emitido imediatamente.
+        const chunks: string[] = [];
+        for await (const delta of this.ai.stream({
           messages: [{ role: 'system', content: systemPrompt }, ...history],
           cache: true,
-        });
-
-        const saved = await this.prisma.message.create({
-          data: { conversationId: convId, role: 'ASSISTANT', content: response.content },
-        });
-
-        // Emite o texto em chunks de ~50 chars para simular streaming no cliente
-        const text = saved.content;
-        const chunkSize = 50;
-        for (let i = 0; i < text.length; i += chunkSize) {
-          subject.next(text.slice(i, i + chunkSize));
-          await new Promise((r) => setTimeout(r, 15));
+        })) {
+          chunks.push(delta);
+          subject.next(delta);
         }
+
+        // Persiste a mensagem completa após o stream terminar.
+        await this.prisma.message.create({
+          data: { conversationId: convId, role: 'ASSISTANT', content: chunks.join('') },
+        });
+
         subject.next('[DONE]');
         subject.complete();
       } catch (err) {
@@ -348,9 +339,9 @@ export class ConversationsService {
   }
 
   private async rebuildSystemPrompt(orgId: string, conv: ConversationWithMessages, query?: string) {
-    // O slug fica prefixado no título: "[product-manager] ..."
-    const slugMatch = conv.title?.match(/^\[([^\]]+)\]/);
-    const agentSlug = slugMatch?.[1] ?? 'product-manager';
+    // Usa o campo dedicado agentSlug; fallback para parsing do título (retrocompatibilidade)
+    const slugFromTitle = conv.title?.match(/^\[([^\]]+)\]/)?.[1];
+    const agentSlug = (conv as typeof conv & { agentSlug?: string | null }).agentSlug ?? slugFromTitle ?? 'product-manager';
 
     const [agentDef, businessContext] = await Promise.all([
       this.resolveAgent(orgId, agentSlug),

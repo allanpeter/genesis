@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { ProfileSection } from '@/components/profile-section';
 import {
+  Bot,
   Building2,
   Lightbulb,
   LineChart,
@@ -14,7 +16,8 @@ import {
 
 const NAV = [
   { href: '/workspace', label: 'Idea Hub', icon: Lightbulb },
-  { href: '/workspace/chat', label: 'Agentes', icon: MessageSquare },
+  { href: '/workspace/chat', label: 'Chat com agentes', icon: MessageSquare },
+  { href: '/workspace/agents', label: 'Gestão de agentes', icon: Bot },
   { href: '/workspace/prd', label: 'PRD', icon: ScrollText },
   { href: '/workspace/roadmap', label: 'Roadmap', icon: Map },
   { href: '/workspace/company', label: 'Empresa', icon: Building2 },
@@ -28,7 +31,7 @@ const NAV = [
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
-      <aside className="w-60 shrink-0 border-r bg-card p-4">
+      <aside className="flex w-60 shrink-0 flex-col border-r bg-card p-4">
         <div className="mb-6 px-2 text-xl font-bold tracking-tight">Genesis</div>
         <nav className="space-y-1">
           {NAV.map(({ href, label, icon: Icon }) => (
@@ -42,6 +45,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
             </Link>
           ))}
         </nav>
+        <ProfileSection />
       </aside>
       <main className="flex-1 p-8">{children}</main>
     </div>

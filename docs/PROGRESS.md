@@ -5,6 +5,37 @@ Formato: entrada por sessão/data, mais recente no topo. Datas absolutas.
 
 ---
 
+## 2026-05-31 — Fase 2 completa ✅
+
+**Entregue:**
+
+- **`agentSlug` em campo próprio** — `Conversation.agentSlug String?` (migration aplicada);
+  `ConversationsService.start()` persiste o slug diretamente; `rebuildSystemPrompt()` lê do campo
+  com fallback retrocompatível para conversas antigas (parse do título).
+- **Streaming real** — `LLMProvider.stream?(req)` adicionado à interface; `AnthropicProvider`
+  implementa via `client.messages.create({ stream: true })`, emitindo cada `text_delta`; 
+  `ProviderRegistry.stream()` usa o primeiro provedor que suporta stream, com fallback para
+  `complete()` chunk único; `AiService.stream()` expõe o método; `ConversationsService.replyStream`
+  substitui a simulação de chunks por streaming real + persiste a mensagem completa no fim.
+- **Painel de gestão de agentes** — `/workspace/agents` (grid built-ins + custom), `/agents/new`,
+  `/agents/:id/edit` (com seletor de agente superior); API: 6 endpoints CRUD + toggle + GET tree.
+- **Hierarquia de agentes** — `Agent.parentId` + `@@unique([organizationId, name])` (migration);
+  `GET /agents/tree` retorna árvore aninhada; `/workspace/agents/tree` visualiza org chart.
+- **Perfil + logout** — `ProfileSection` na base do sidebar (avatar, nome, email, logout).
+- **Dark theme** — script anti-FOUC em `layout.tsx`; botão sol/lua no sidebar persiste em `localStorage`,
+  respeita `prefers-color-scheme` na primeira visita.
+- **Testes** — Vitest em `packages/ai`; 2 arquivos, 13 testes (100% passando):
+  `extractJson` (6 casos: bare/fenced/prose/trailing-commas/throw) e
+  `agent-loader` (7 casos: list/load/null/merge).
+
+**Verificado:** `pnpm build` 5/5 · `pnpm --filter @genesis/ai test` 13/13.
+
+**RAG já estava implementado** (sessão anterior): `EmbedderService` (OpenAI), `QdrantVectorService`,
+`RagService` (chunk+embed+upsert+search), `BusinessContextService` com fallback semântico/recência.
+Requer `OPENAI_API_KEY` + Qdrant rodando para ativar; degrada graciosamente sem eles.
+
+---
+
 ## 2026-05-31 — Agentes conversacionais com .md + geração de artefatos ✅
 
 **Entregue:** agentes especializados que fazem perguntas estratégicas antes de gerar qualquer artefato.

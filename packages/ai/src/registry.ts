@@ -55,6 +55,26 @@ export class ProviderRegistry {
     return this.runFallback((p) => p.embed(req), 'embed');
   }
 
+  /**
+   * Streaming de texto delta via primeiro provedor configurado que suporta stream().
+   * Se nenhum provedor suportar, faz complete() e emite o resultado inteiro de uma vez.
+   */
+  async *stream(req: CompletionRequest): AsyncIterable<string> {
+    const chain = this.chain();
+    if (chain.length === 0) throw new Error('Nenhum provedor de IA configurado para "stream".');
+
+    for (const provider of chain) {
+      if (typeof provider.stream === 'function') {
+        yield* provider.stream(req);
+        return;
+      }
+    }
+
+    // Fallback: complete() emitido como chunk único
+    const res = await this.complete(req);
+    yield res.content;
+  }
+
   private async runFallback<T>(
     fn: (p: LLMProvider) => Promise<T>,
     op: string,

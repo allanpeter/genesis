@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { AgentsModule } from './agents/agents.module';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -21,6 +22,7 @@ import { RoadmapsModule } from './roadmaps/roadmaps.module';
     // .env fica na raiz do monorepo; tenta local primeiro, depois a raiz.
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     PrismaModule,
+    AgentsModule,
     AiModule,
     AuthModule,
     HealthModule,
